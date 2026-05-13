@@ -1,0 +1,52 @@
+{
+  "name": "@explita/prisma-guard",
+  "version": "0.1.0",
+  "description": "The ultimate Prisma companion for input sanitization and Zod schema generation. Protect your database from unknown fields and validate your data with ease.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "bin": {
+    "prisma-guard": "dist/cli/index.js"
+  },
+  "keywords": [
+    "prisma",
+    "zod",
+    "validation",
+    "schema-generator",
+    "type-safety",
+    "input-sanitization",
+    "guard",
+    "extension"
+  ],
+  "license": "MIT",
+  "author": "Explita",
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "npm run clean && tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/explita/prisma-guard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/explita/prisma-guard/issues"
+  },
+  "homepage": "https://github.com/explita/prisma-guard#readme",
+  "peerDependencies": {
+    "@prisma/client": "^7"
+  },
+  "dependencies": {
+    "@prisma/internals": "7.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "rimraf": "^6.0.1",
+    "zod": "^4.4.3",
+    "typescript": "^5"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}
