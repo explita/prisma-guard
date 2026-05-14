@@ -61,6 +61,11 @@ export async function loadConfigFile(reload = false) {
 
   if (fs.existsSync(jsPath)) {
     try {
+      if (reload && typeof require !== "undefined") {
+        try {
+          delete require.cache[require.resolve(jsPath)];
+        } catch (e) {}
+      }
       const module = await import(getUrl(jsPath));
       config = module.default || module;
     } catch (e: any) {
@@ -70,6 +75,11 @@ export async function loadConfigFile(reload = false) {
     }
   } else if (fs.existsSync(mjsPath)) {
     try {
+      if (reload && typeof require !== "undefined") {
+        try {
+          delete require.cache[require.resolve(mjsPath)];
+        } catch (e) {}
+      }
       const module = await import(getUrl(mjsPath));
       config = module.default || module;
     } catch (e: any) {

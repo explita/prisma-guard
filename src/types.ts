@@ -37,6 +37,8 @@ export type ZodGeneratorOptions = {
   schemaSuffix?: string;
   enumSuffix?: string;
   useJsDoc?: boolean;
+  defaultsOnOverride?: boolean;
+  fullScalar?: boolean;
 };
 
 /**
@@ -236,4 +238,23 @@ export type PrismaGuardConfig = {
    * ```
    */
   decorators?: Record<string, string>;
+
+  /**
+   * Preserve Prisma's `@default()` value via `.default()` on Zod schemas even when
+   * an explicit override (`z.` or `override `) is used.
+   *
+   * @default false
+   * @example true
+   */
+  defaultsOnOverride?: boolean;
+  /**
+   * Always generate a full scalar schema (ModelScalarSchema) and type (ModelScalar)
+   * that includes all fields, ignoring any omissions (zodOmit, /// @zod.omit).
+   *
+   * Useful for service layer functions where you need the complete database entity type.
+   *
+   * @default true
+   * @example true
+   */
+  fullScalar?: boolean;
 };

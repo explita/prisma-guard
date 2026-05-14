@@ -1,6 +1,6 @@
 {
   "name": "@explita/prisma-guard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The ultimate Prisma companion for input sanitization and Zod schema generation. Protect your database from unknown fields and validate your data with ease.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

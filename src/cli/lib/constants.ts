@@ -56,6 +56,8 @@ export default defineConfig({
   autoTrim: true,
   enumSuffix: "Enum",
   schemaSuffix: "Schema",
+  defaultsOnOverride: false,
+  fullScalar: false, //true by default.
 });
 `;
 };

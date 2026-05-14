@@ -185,31 +185,35 @@ export function generateFieldZod(
   field: any,
   config: PrismaGuardConfig,
   usedEnums?: Set<string>,
+  ignoreOmissions: boolean = false,
+  isScalar: boolean = false,
 ): { zodType: string; descriptionLines: string[] } | null {
   if (field.kind === "object") return null;
 
   // Check for explicit inclusion first (bypasses all omissions)
   const isExplicitlyIncluded = field.documentation?.includes("@zod.include");
 
-  // Omit IDs
-  if (config.omitIds && field.isId && !isExplicitlyIncluded) return null;
+  if (!ignoreOmissions) {
+    // Omit IDs
+    if (config.omitIds && field.isId && !isExplicitlyIncluded) return null;
 
-  // Omit Dates
-  if (config.omitDates && !isExplicitlyIncluded) {
-    const dateNames = ["createdAt", "created_at", "updatedAt", "updated_at"];
-    if (dateNames.includes(field.name) || field.isUpdatedAt) {
+    // Omit Dates
+    if (config.omitDates && !isExplicitlyIncluded) {
+      const dateNames = ["createdAt", "created_at", "updatedAt", "updated_at"];
+      if (dateNames.includes(field.name) || field.isUpdatedAt) {
+        return null;
+      }
+    }
+
+    // Omit via Global Config
+    if (config.zodOmit?.includes(field.name) && !isExplicitlyIncluded) {
       return null;
     }
-  }
 
-  // Omit via Global Config
-  if (config.zodOmit?.includes(field.name) && !isExplicitlyIncluded) {
-    return null;
-  }
-
-  // Omit via Decorator
-  if (field.documentation?.includes("@zod.omit")) {
-    return null;
+    // Omit via Decorator
+    if (field.documentation?.includes("@zod.omit")) {
+      return null;
+    }
   }
 
   let zodType = config.typeMap?.[field.type] || "z.any()";
@@ -226,12 +230,16 @@ export function generateFieldZod(
     zodType = `z.array(${zodType})`;
   }
 
-  const hasDefaultValue = field.default !== undefined && field.default !== null;
-
   // --- Process Documentation (Decorators & Descriptions) ---
   const zodDecorators: string[] = [];
   const descriptionLines: string[] = [];
   let hasCustomBase = false;
+  let isOverride = false;
+  const hasDefaultValue =
+    (field.default !== undefined && field.default !== null) ||
+    field.isId ||
+    field.isUpdatedAt;
+
   let lastDecoratorIndex = -1;
 
   if (field.documentation) {
@@ -262,6 +270,7 @@ export function generateFieldZod(
             zodType = cleanPreset;
             hasCustomBase = true;
             isEnumUsed = false;
+            isOverride = true;
           } else {
             const chainPart = presetStr.startsWith(".")
               ? presetStr.slice(1)
@@ -279,8 +288,20 @@ export function generateFieldZod(
         // Skip internal directive again (safety check)
         if (command === "include") return;
 
-        if (command.startsWith("z.") || command.startsWith("override ")) {
-          const cleanCommand = command.replace("override ", "");
+        const isOverrideCommand =
+          command.startsWith("z.") ||
+          command.startsWith("override ") ||
+          command.startsWith("coerce.") ||
+          command.startsWith("enum(");
+
+        if (isOverrideCommand) {
+          let cleanCommand = command.replace("override ", "");
+          if (
+            cleanCommand.startsWith("coerce.") ||
+            cleanCommand.startsWith("enum(")
+          ) {
+            cleanCommand = "z." + cleanCommand;
+          }
 
           if (!hasCustomBase) {
             zodType = cleanCommand;
@@ -319,13 +340,64 @@ export function generateFieldZod(
     });
   }
 
+  // --- Process Decorators for Logic ---
+  const cleanDecorators = zodDecorators.map((d) =>
+    d.startsWith(".") ? d : `.${d}`,
+  );
+
+  if (!isOverride) {
+    isOverride = cleanDecorators.some(
+      (d) => d.startsWith(".z.") || d.startsWith(".override "),
+    );
+  }
+
+  // Check for absolute override
+  const absoluteOverride = cleanDecorators.find(
+    (d) => d.startsWith(".z.") || d.startsWith(".override "),
+  );
+
+  if (absoluteOverride) {
+    zodType = absoluteOverride.startsWith(".override ")
+      ? absoluteOverride.replace(".override ", "")
+      : absoluteOverride.substring(1); // Remove leading dot
+  }
+
   // --- Post-decorator Logic ---
   if (isEnumUsed && usedEnums) {
     usedEnums.add(field.type);
   }
 
+  // Handle Required validation (min 1) before decorators
+  if (!field.isRequired && !isOverride) {
+    // Skip
+  } else if (!hasDefaultValue && !isOverride && !isScalar) {
+    // Required field logic
+    if (
+      field.type === "String" &&
+      !zodType.includes(".min") &&
+      !zodDecorators.some((d) => d.includes(".min"))
+    ) {
+      zodType = `${zodType}.min(1, { message: REQUIRED_MESSAGE })`;
+    } else if (
+      field.kind !== "enum" &&
+      !zodType.startsWith("z.any") &&
+      !zodType.startsWith("z.unknown") &&
+      !zodType.includes(".min") &&
+      !zodDecorators.some((d) => d.includes(".min"))
+    ) {
+      // For non-string/non-enum required types, add required_error
+      zodType = `${zodType.replace("()", "({ error: REQUIRED_MESSAGE })")}`;
+    }
+  }
+
+  // Add decorators to the chain
+  zodDecorators.forEach((decorator) => {
+    const call = decorator.startsWith(".") ? decorator : `.${decorator}`;
+    zodType += call;
+  });
+
   // Handle Nullability (Required/Optional)
-  if (!field.isRequired) {
+  if (!field.isRequired && !isOverride) {
     // Only add .nullish() if it's not already overridden as optional/nullish in decorators
     const hasNullabilityOverride = zodDecorators.some(
       (d) =>
@@ -336,28 +408,14 @@ export function generateFieldZod(
     if (!hasNullabilityOverride) {
       zodType = `${zodType}.nullish()`;
     }
-  } else if (!hasDefaultValue) {
-    // Required field logic
-    if (
-      field.type === "String" &&
-      !zodType.includes(".min") &&
-      !hasCustomBase
-    ) {
-      zodType = `${zodType}.min(1, { message: REQUIRED_MESSAGE })`;
-    } else if (
-      field.kind !== "enum" &&
-      !hasCustomBase &&
-      !zodType.startsWith("z.any") &&
-      !zodType.startsWith("z.unknown") &&
-      !zodType.includes(".min")
-    ) {
-      // For non-string/non-enum required types, add required_error
-      zodType = `${zodType.replace("()", "({ error: REQUIRED_MESSAGE })")}`;
-    }
   }
 
   // Handle Default Values
-  if (field.default !== undefined) {
+  if (
+    field.default !== undefined &&
+    !zodType.includes(".default(") &&
+    (!isOverride || config.defaultsOnOverride)
+  ) {
     let defaultValue: string | undefined;
 
     if (
@@ -365,10 +423,14 @@ export function generateFieldZod(
       typeof field.default === "number" ||
       typeof field.default === "boolean"
     ) {
-      defaultValue =
-        typeof field.default === "string"
-          ? `"${field.default}"`
-          : String(field.default);
+      if (zodType.startsWith("z.record") || zodType.startsWith("z.array") || zodType.includes(".record(") || zodType.includes(".array(")) {
+        defaultValue = String(field.default);
+      } else {
+        defaultValue =
+          typeof field.default === "string"
+            ? `"${field.default}"`
+            : String(field.default);
+      }
     } else if (
       typeof field.default === "object" &&
       field.default !== null &&
@@ -390,17 +452,23 @@ export function generateFieldZod(
     }
   }
 
-  // Add decorators to the chain
-  zodDecorators.forEach((decorator) => {
-    const call = decorator.startsWith(".") ? decorator : `.${decorator}`;
-    zodType += call;
-  });
+  // Handle Scalar Mode Optionality - MUST COME AFTER .default()
+  if (isScalar && hasDefaultValue) {
+    const alreadyOptional =
+      zodType.includes(".optional()") || zodType.includes(".nullish()");
+    if (!alreadyOptional) {
+      zodType = `${zodType}.optional()`;
+    }
+  }
 
   if (descriptionLines.length > 0 && !config.useJsDoc) {
     zodType += `.describe(${JSON.stringify(descriptionLines.join("\n"))})`;
   }
 
-  return { zodType, descriptionLines };
+  return {
+    zodType,
+    descriptionLines,
+  };
 }
 
 /**

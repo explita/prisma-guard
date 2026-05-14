@@ -133,6 +133,13 @@ export default defineConfig({
     DateTime: "z.string().datetime()",
   },
   zodOmit: ["password", "secret", "resetToken"], // Global omission
+  defaultsOnOverride: false, // Keep @default() when using @zod.z.override
+
+  // Without this (default: false):
+  // /// @zod.z.enum(["A","B"])  → z.enum(["A","B"])  (default LOST)
+
+  // With this (true):
+  // /// @zod.z.enum(["A","B"])  → z.enum(["A","B"]).default("A") (default KEPT)
 });
 ```
 
@@ -168,14 +175,29 @@ export default {
 }
 ```
 
+#
+
 ### Configuration Notes:
 
+- **`schemaDir`**: Optional. Defaults to `"./prisma"`. Path to the directory containing your Prisma schema files.
 - **`outputDir`**: Optional. Defaults to `node_modules/.prisma-guard`.
   - If you only use the Prisma Guard extension, you can skip this.
   - If you need Zod schemas in your code, set this to a committed directory (e.g., `./src/generated`).
-- **`typeMap`**: Optional. You only need to provide the types you want to **override**.
-- **`skipGitignore`**: Optional. Defaults to `false`. Set to `true` to prevent the tool from automatically updating your `.gitignore`.
+- **`omitIds`**: Optional. Defaults to `false`. Remove all `@id` fields from generated Zod schemas.
+- **`omitDates`**: Optional. Defaults to `false`. Remove timestamp fields (e.g., `createdAt` and `updatedAt`) from generated schemas.
+- **`generateZod`**: Optional. Defaults to `true`. Whether to generate Zod schemas. If `false`, only the runtime guard utilities are generated.
+- **`zodOmit`**: Optional. Defaults to `[]`. Global list of field names to omit from ALL generated Zod schemas (e.g., `["password", "secret"]`).
+- **`autoTrim`**: Optional. Defaults to `true`. Automatically add `.trim()` to all `z.string()` validations.
+- **`schemaSuffix`**: Optional. Defaults to `"Schema"`. Suffix appended to generated Zod schema names (e.g., `UserSchema`).
+- **`enumSuffix`**: Optional. Defaults to `"Enum"`. Suffix appended to generated Zod enum schemas (e.g., `RoleEnum`).
+- **`useJsDoc`**: Optional. Defaults to `false`. Use `/** */` comments in generated TypeScript files instead of `.describe()`.
+- **`debug`**: Optional. Defaults to `false`. Enable debug logging to console.
 - **`prettier`**: Optional. Defaults to `true`. Set to `false` to disable automatic Prettier formatting on generated files.
+- **`skipGitignore`**: Optional. Defaults to `false`. Set to `true` to prevent the tool from automatically updating your `.gitignore`.
+- **`typeMap`**: Optional. You only need to provide the types you want to **override**.
+- **`decorators`**: Optional. Named validation decorators for reuse across your Prisma schema with `/// @zod.use(name)`.
+- **`fullScalar`**: Optional. Defaults to `true`. When enabled, the generator creates additional Scalar-focused Zod schemas and TypeScript types (e.g. `ServiceScalar`, `ServiceCreateRequired`) that are highly ergonomic for service-layer inputs.
+- **`defaultsOnOverride`**: Optional. Defaults to `false`. By default, using an absolute override (`///@zod.z.` or `override `) strips Prisma's `@default()` from the Zod schema. Set to `true` to force appending `.default()` even on overridden fields.
 
 > **✨ Zero-Config Magic**: Prisma Guard automatically manages your `.gitignore`, formats generated code with Prettier, and cleans up old folders. No manual setup required.
 
@@ -219,6 +241,32 @@ npx prisma-guard generate
 # Or just generate the Zod schemas
 npx prisma-guard zod
 ```
+
+### 💎 Advanced Type Ergonomics
+
+Prisma Guard doesn't just generate schemas; it provides a complete set of TypeScript types for your entire application lifecycle.
+
+By default (via `fullScalar: true`), every model generates **Dual Schemas**:
+
+1.  **Public Schemas** (`UserCreateSchema`): Respects your `zodOmit` and `@zod.omit` rules. Perfect for API validation.
+2.  **Scalar Schemas** (`UserCreateScalarSchema`): Includes **every** database field. Perfect for internal services and DB operations.
+
+#### Generated Types Reference
+
+For a model named `Service`, the following types are exported:
+
+| Type                        | Description                                                                                                       |
+| :-------------------------- | :---------------------------------------------------------------------------------------------------------------- |
+| **`ServiceCreate`**         | The output of `ServiceCreateSchema`. Restricted for public APIs.                                                  |
+| **`ServiceInput`**          | The raw input for `ServiceCreateSchema` (before Zod defaults).                                                    |
+| **`ServiceUpdate`**         | Partial version of `ServiceCreate` for patch operations.                                                          |
+| **`ServiceScalar`**         | The internal database record (includes omitted fields).                                                           |
+| **`ServiceScalarInput`**    | Raw input for the scalar schema.                                                                                  |
+| **`ServiceScalarUpdate`**   | Partial version of the internal record.                                                                           |
+| **`ServiceCreateRequired`** | **The ultimate service type.** Omits all fields with defaults (id, createdAt, etc.) but requires internal fields. |
+
+> [!TIP]
+> **Internal Service Layer**: Always use **`ModelCreateRequired`** for your service functions. It ensures you provide required internal fields (like `tenantId`) while keeping DB-managed fields (like `id` or `status`) optional!
 
 #
 
@@ -509,6 +557,18 @@ model Post {
 - **`@zod.z.`**: Shorthand for overrides (e.g., `/// @zod.z.email().min(5)`).
 - **`@zod.import`**: Add custom imports to the top of the file.
 
+> [!IMPORTANT]
+> **Absolute Overrides vs. Decorators**:
+>
+> - Use **Decorators** (e.g., `/// @zod.min(5)`) to **append** logic to the inferred Prisma type.
+> - Use **Absolute Overrides** (e.g., `/// @zod.z.`) to **replace** the inferred type entirely.
+>
+> You **must** use an absolute override for:
+>
+> 1. **Coercion**: `z.coerce.number()` (because `.coerce` is not a method on schema instances).
+> 2. **Type Changes**: Changing a `String` field to `z.enum()` or `z.any()`.
+> 3. **Complex Structures**: Using `z.union()`, `z.record()`, or `z.lazy()`.
+
 #
 
 #### Watch Mode (Developer Experience)
@@ -685,6 +745,14 @@ Reload VS Code window (Cmd/Ctrl + Shift + P → "Developer: Reload Window")
 ### My custom decorators aren't being applied
 
 Check that `decorators` is in your config and you're using `/// @zod.use(name)` where `name` is the name of the decorator in your config.
+
+### My @default values disappeared from Zod schemas!
+
+If you're using `/// @zod.z.` overrides and your Prisma `@default()` isn't showing up:
+
+**Fix:** Set `defaultsOnOverride: true` in your config.
+
+**Why:** By default, explicit overrides assume you want full control, including default values. Set to `true` to automatically append `.default()` to your overrides.
 
 ### Prisma is yelling about missing required fields!
 

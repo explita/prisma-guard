@@ -29,6 +29,8 @@ export async function generateZod({
   schemaSuffix = "Schema",
   enumSuffix = "Enum",
   useJsDoc = false,
+  defaultsOnOverride = false,
+  fullScalar = true,
 }: ZodGeneratorOptions) {
   const { dmmf, prismaFiles } = await generateDMMFData(schemaDir);
 
@@ -121,24 +123,27 @@ export async function generateZod({
 
     for (const model of models) {
       let fieldsContent = "";
+      let scalarFieldsContent = "";
+
+      const fieldConfig = {
+        schemaDir,
+        outputDir,
+        omitIds,
+        omitDates,
+        typeMap: finalTypeMap,
+        decorators,
+        zodOmit,
+        autoTrim,
+        schemaSuffix,
+        enumSuffix,
+        useJsDoc,
+        defaultsOnOverride,
+        fullScalar,
+      };
+
       for (const field of model.fields) {
-        const result = generateFieldZod(
-          field,
-          {
-            schemaDir,
-            outputDir,
-            omitIds,
-            omitDates,
-            typeMap: finalTypeMap,
-            decorators,
-            zodOmit,
-            autoTrim,
-            schemaSuffix,
-            enumSuffix,
-            useJsDoc,
-          } as any,
-          fileUsedEnums,
-        );
+        // Standard field (with omissions)
+        const result = generateFieldZod(field, fieldConfig, fileUsedEnums);
 
         if (result) {
           const { zodType, descriptionLines } = result;
@@ -146,6 +151,26 @@ export async function generateZod({
             fieldsContent += formatJsDoc(descriptionLines, "  ");
           }
           fieldsContent += `  ${field.name}: ${zodType},\n`;
+        }
+
+        // Full scalar field (ignoring omissions)
+        if (fullScalar) {
+          const scalarResult = generateFieldZod(
+            field,
+            fieldConfig,
+            fileUsedEnums,
+            true, // ignoreOmissions
+            true, // isScalar
+          );
+          if (scalarResult) {
+            const isUpdatedAt =
+              field.isUpdatedAt ||
+              ["updatedAt", "updated_at"].includes(field.name);
+
+            if (!isUpdatedAt) {
+              scalarFieldsContent += `  ${field.name}: ${scalarResult.zodType},\n`;
+            }
+          }
         }
       }
 
@@ -180,6 +205,9 @@ export async function generateZod({
             }
 
             fieldsContent += `  ${fieldName}: ${zodType},\n`;
+            if (fullScalar) {
+              scalarFieldsContent += `  ${fieldName}: ${zodType},\n`;
+            }
             existingFieldNames.add(fieldName);
           }
         });
@@ -205,9 +233,23 @@ export async function generateZod({
         createSchema += `.describe(${JSON.stringify(descriptionLines.join("\n"))})`;
       }
 
-      // Build Update Schema
+      // Schema and Type names
       const sSuffix = schemaSuffix;
-      let updateSchema = `${model.name}${sSuffix}.partial()`;
+      const createName = `${model.name}Create${sSuffix}`;
+      const updateName = `${model.name}Update${sSuffix}`;
+      const createScalarName = `${model.name}CreateScalar${sSuffix}`;
+      const updateScalarName = `${model.name}UpdateScalar${sSuffix}`;
+
+      const createType = `${model.name}Create`;
+      const inputType = `${model.name}Input`;
+      const updateType = `${model.name}Update`;
+      const scalarType = `${model.name}Scalar`;
+      const scalarInputType = `${model.name}ScalarInput`;
+      const scalarUpdateType = `${model.name}ScalarUpdate`;
+      const createRequiredType = `${model.name}CreateRequired`;
+
+      // Build Update Schema
+      let updateSchema = `${createName}.partial()`;
       update.forEach((d) => {
         updateSchema += d.startsWith(".") ? d : `.${d}`;
       });
@@ -219,10 +261,26 @@ export async function generateZod({
       if (descriptionLines.length > 0 && useJsDoc) {
         modelsCode += formatJsDoc(descriptionLines);
       }
-      modelsCode += `export const ${model.name}${sSuffix} = ${createSchema}\n\n`;
-      modelsCode += `export const ${model.name}Update${sSuffix} = ${updateSchema}\n\n`;
-      modelsCode += `export type ${model.name} = z.infer<typeof ${model.name}${sSuffix}>\n\n`;
-      modelsCode += `export type ${model.name}Update = z.infer<typeof ${model.name}Update${sSuffix}>\n\n`;
+
+      modelsCode += `export const ${createName} = ${createSchema}\n\n`;
+      modelsCode += `export const ${updateName} = ${updateSchema}\n\n`;
+
+      if (fullScalar) {
+        modelsCode += `export const ${createScalarName} = z.object({\n${scalarFieldsContent}})\n\n`;
+        modelsCode += `export const ${updateScalarName} = ${createScalarName}.partial()\n\n`;
+      }
+
+      modelsCode += `export type ${createType} = z.infer<typeof ${createName}>\n`;
+      modelsCode += `export type ${inputType} = z.input<typeof ${createName}>\n`;
+      modelsCode += `export type ${updateType} = z.infer<typeof ${updateName}>\n`;
+
+      if (fullScalar) {
+        modelsCode += `export type ${scalarType} = z.infer<typeof ${createScalarName}>\n`;
+        modelsCode += `export type ${scalarInputType} = z.input<typeof ${createScalarName}>\n`;
+        modelsCode += `export type ${scalarUpdateType} = z.infer<typeof ${updateScalarName}>\n`;
+        modelsCode += `export type ${createRequiredType} = Omit<${scalarType}, 'id' | 'createdAt' | 'updatedAt'>\n`;
+      }
+      modelsCode += `\n`;
     }
 
     // Post-process modelsCode to detect auto-imports via ref("constants.NAME")
