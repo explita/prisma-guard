@@ -3,6 +3,18 @@
 All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-05-21
+
+### Features & Highlights
+
+- **Schema Optimization**: Improved Zod generation logic where `UpdateSchema` intelligently uses `.partial()` of the base schema if no update-specific decorators exist, significantly reducing code duplication and generated file sizes.
+- **Custom Schema Generation**: Extra schemas created via `/// @zod.include` are now intelligently generated alongside their referencing models with full Create/Update variants and type inferences.
+- **Strict Error Handling**: The generator now throws explicit errors with clear messages if a nonexistent field is referenced in `@zod.pick`/`@zod.omit` or an undefined decorator is used in `@zod.use`.
+- **Import Suffix Option**: Added an `importSuffix` configuration property (e.g., `importSuffix: ".js"`) to append extensions to internally generated relative imports, which is essential for Node.js ESM environments.
+- **Omission Bypassing**: Named picks (`/// @zod.pick(...).as(Name)`) now fully bypass global and local omissions, guaranteeing your custom sub-schema includes exactly the fields you specified.
+
+---
+
 ## [0.1.1] - 2026-05-14
 
 ### Features & Highlights

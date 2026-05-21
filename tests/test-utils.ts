@@ -1,5 +1,5 @@
-import { stripExtraFields } from "../src/lib/utils";
-import { ModelFields } from "../src/types";
+import { stripExtraFields } from "../src/lib/strip-fields.js";
+import { ModelFields } from "../src/types.js";
 
 const mockFields: Record<string, ModelFields> = {
   User: {

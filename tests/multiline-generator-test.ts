@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
-import { generateZod } from "../src/core/zod-generator.js";
-import { z, pg, ref } from "../src/index.js";
+import { generateZod } from "../src/core/zod/zod-generator.js";
+import { v } from "../src/index.js";
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -15,26 +15,26 @@ async function runMultilineTests() {
 
   // Verify Proxy (using template literal to trigger toString)
   assert(
-    `${z.string().min(8)}` === "z.string().min(8)",
-    "Proxy 'z' should build string",
+    `${v.string().min(8)}` === "z.string().min(8)",
+    "Proxy 'v' should build string for absolute overrides",
   );
   assert(
-    `${pg.email().trim()}` === ".email().trim()",
-    "Proxy 'pg' should build chain string",
+    `${v.chain.email().trim()}` === ".email().trim()",
+    "Proxy 'v.chain' should build chain string",
   );
   assert(
-    `${z.enum(ref("constants").genders)}` ===
+    `${v.enum(v.var("constants").genders)}` ===
       "z.enum(__GUARD_REF__constants.genders)",
-    "ref() should allow raw variable references with internal tag",
+    "v.var() should allow raw variable references with internal tag",
   );
   
   // Verify Deep Stringify (objects with functions)
-  const complex = z.enum(["A", "B"], {
+  const complex = v.enum(["A", "B"], {
     error: (issue: any) => issue.code
   });
   assert(
     `${complex}`.includes("error:") && `${complex}`.includes("issue.code"),
-    "Proxy should deep-stringify objects with functions"
+    "Proxy should deep-stringify objects with functions",
   );
 
   const testSchemaDir = path.join(process.cwd(), "tests/tmp-schema-multiline");
@@ -75,8 +75,8 @@ async function runMultilineTests() {
     outputDir: testOutputDir,
     dryRun: false,
     decorators: {
-      email: `${pg.email().min(5)}`,
-      password: `${z.string().min(8)}`,
+      email: `${v.chain.email().min(5)}`,
+      password: `${v.string().min(8)}`,
       modelCheck: ".check((ctx) => { console.log('model check'); })",
     },
   });

@@ -79,7 +79,11 @@ export function collectCustomImports(
       });
     }
 
-    if (model.documentation?.includes("@zod.omit")) {
+    if (
+      model.documentation
+        ?.split("\n")
+        .some((l: string) => l.trim() === "@zod.omit")
+    ) {
       continue;
     }
 
@@ -187,13 +191,37 @@ export function generateFieldZod(
   usedEnums?: Set<string>,
   ignoreOmissions: boolean = false,
   isScalar: boolean = false,
+  pickFields?: Set<string>,
+  modelOmitFields?: Set<string>,
 ): { zodType: string; descriptionLines: string[] } | null {
-  if (field.kind === "object") return null;
+  if (field.kind === "object") {
+    if (isScalar) return null;
+    const hasDecorator =
+      field.documentation &&
+      field.documentation
+        .split("\n")
+        .some((l: string) => l.trim().startsWith("@zod."));
+    if (!hasDecorator) return null;
+  }
 
   // Check for explicit inclusion first (bypasses all omissions)
   const isExplicitlyIncluded = field.documentation?.includes("@zod.include");
 
   if (!ignoreOmissions) {
+    // Keep only specified fields (model-level @zod.pick)
+    if (pickFields && !pickFields.has(field.name) && !isExplicitlyIncluded) {
+      return null;
+    }
+
+    // Omit specified fields (model-level @zod.omit(field1, field2, ...))
+    if (
+      modelOmitFields &&
+      modelOmitFields.has(field.name) &&
+      !isExplicitlyIncluded
+    ) {
+      return null;
+    }
+
     // Omit IDs
     if (config.omitIds && field.isId && !isExplicitlyIncluded) return null;
 
@@ -218,6 +246,10 @@ export function generateFieldZod(
 
   let zodType = config.typeMap?.[field.type] || "z.any()";
   let isEnumUsed = false;
+
+  if (field.kind === "object") {
+    zodType = `z.relation("${field.type}")`;
+  }
 
   if (field.kind === "enum") {
     const eSuffix = config.enumSuffix;
@@ -285,8 +317,8 @@ export function generateFieldZod(
       if (trimmed.startsWith("@zod.")) {
         const command = trimmed.replace("@zod.", "");
 
-        // Skip internal directive again (safety check)
-        if (command === "include") return;
+        // Skip internal directives
+        if (command === "include" || command === "omit") return;
 
         const isOverrideCommand =
           command.startsWith("z.") ||
@@ -423,7 +455,12 @@ export function generateFieldZod(
       typeof field.default === "number" ||
       typeof field.default === "boolean"
     ) {
-      if (zodType.startsWith("z.record") || zodType.startsWith("z.array") || zodType.includes(".record(") || zodType.includes(".array(")) {
+      if (
+        zodType.startsWith("z.record") ||
+        zodType.startsWith("z.array") ||
+        zodType.includes(".record(") ||
+        zodType.includes(".array(")
+      ) {
         defaultValue = String(field.default);
       } else {
         defaultValue =
@@ -444,7 +481,16 @@ export function generateFieldZod(
       ["Decimal", "BigInt"].includes(field.type) &&
       typeof field.default !== "object"
     ) {
-      defaultValue = `"${field.default}"`;
+      if (zodType.includes("number") || zodType.includes("coerce.number")) {
+        defaultValue = String(field.default);
+      } else if (
+        zodType.includes("bigint") ||
+        zodType.includes("coerce.bigint")
+      ) {
+        defaultValue = `${field.default}n`;
+      } else {
+        defaultValue = `"${field.default}"`;
+      }
     }
 
     if (defaultValue !== undefined) {
@@ -455,7 +501,9 @@ export function generateFieldZod(
   // Handle Scalar Mode Optionality - MUST COME AFTER .default()
   if (isScalar && hasDefaultValue) {
     const alreadyOptional =
-      zodType.includes(".optional()") || zodType.includes(".nullish()");
+      zodType.includes(".optional()") ||
+      zodType.includes(".nullish()") ||
+      zodType.includes(".default(");
     if (!alreadyOptional) {
       zodType = `${zodType}.optional()`;
     }
@@ -503,7 +551,7 @@ export function parseModelDecorators(
           const preset = decorators?.[name];
           if (name && !preset) {
             throw new PrismaGuardError(
-              `Model decorator "${name}" not found in config. Check your prisma-guard.config.js.`,
+              `Model decorator "${name}" not found in config. Check your prisma-guard.config.(js|mjs|json).`,
             );
           }
           if (preset) {
@@ -517,14 +565,20 @@ export function parseModelDecorators(
       }
 
       if (trimmed.startsWith("@zod.create.")) {
+        if (trimmed.startsWith("@zod.create.omit(")) return;
+        if (trimmed.startsWith("@zod.create.pick(")) return;
         create.push(trimmed.replace("@zod.create.", ""));
         lastType = "create";
       } else if (trimmed.startsWith("@zod.update.")) {
+        if (trimmed.startsWith("@zod.update.omit(")) return;
+        if (trimmed.startsWith("@zod.update.pick(")) return;
         update.push(trimmed.replace("@zod.update.", ""));
         lastType = "update";
       } else if (trimmed.startsWith("@zod.")) {
-        // Skip @zod.add which is handled by zod-generator.ts
-        if (trimmed.startsWith("@zod.add ")) return;
+        // Skip @zod.add variations which are handled by zod-generator.ts
+        if (trimmed.startsWith("@zod.add")) return;
+        if (trimmed.startsWith("@zod.pick")) return;
+        if (trimmed.startsWith("@zod.omit(")) return;
 
         shared.push(trimmed.replace("@zod.", ""));
         lastType = "shared";
@@ -549,4 +603,144 @@ export function parseModelDecorators(
   }
 
   return { create: [...shared, ...create], update: [...shared, ...update] };
+}
+
+/**
+ * Parses extra non-Prisma schemas defined in comments via @zod.include(...)
+ *
+ * Supports two forms:
+ * 1. Shorthand:  /// @zod.include(decoratorName)
+ *    Looks up `decoratorName` in the decorators config, PascalCases it for the schema name.
+ * 2. Inline:     /// @zod.include(SchemaName: z.object({...}))
+ *    Uses the inline schema definition directly.
+ */
+export function parseExtraSchemas(
+  rawContent: string,
+  decorators?: Record<string, string>,
+): { name: string; schema: string }[] {
+  const lines = rawContent.split("\n");
+  const extraSchemas: { name: string; schema: string }[] = [];
+
+  let currentName: string | null = null;
+  let currentContent = "";
+  let parenCount = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("///")) {
+      currentName = null;
+      continue;
+    }
+
+    // Extract comment content (after "///")
+    const commentContent = trimmed.substring(3).trim();
+
+    if (currentName === null) {
+      // Form 1: Shorthand — @zod.include(decoratorName)
+      const shorthandMatch = commentContent.match(
+        /^@zod\.include\(\s*(\w+)\s*\)$/,
+      );
+      if (shorthandMatch) {
+        const decoratorKey = shorthandMatch[1];
+        if (!decorators?.[decoratorKey]) {
+          throw new PrismaGuardError(
+            `Decorator "${decoratorKey}" not found in config. Check your prisma-guard.config.(js|mjs|json).`,
+          );
+        }
+        // PascalCase the decorator key for the schema name
+        const schemaName =
+          decoratorKey.charAt(0).toUpperCase() + decoratorKey.slice(1);
+        extraSchemas.push({
+          name: schemaName,
+          schema: String(decorators[decoratorKey]),
+        });
+
+        continue;
+      }
+
+      // Form 2: Inline — @zod.include(Name: z.object({...}))
+      const inlineMatch = commentContent.match(
+        /^@zod\.include\(\s*(\w+)\s*:\s*(.*)/,
+      );
+      if (inlineMatch) {
+        currentName = inlineMatch[1];
+        const rest = inlineMatch[2];
+        parenCount = 1; // we've seen the opening parenthesis of include(
+        currentContent = "";
+
+        // Count parens in the rest of this line
+        let foundEnd = false;
+        for (let i = 0; i < rest.length; i++) {
+          const char = rest[i];
+          if (char === "(") parenCount++;
+          else if (char === ")") parenCount--;
+
+          if (parenCount === 0) {
+            currentContent += rest.substring(0, i);
+            foundEnd = true;
+            break;
+          }
+        }
+
+        if (foundEnd) {
+          let schemaStr = currentContent.trim();
+          if (/^\w+$/.test(schemaStr)) {
+            if (!decorators?.[schemaStr]) {
+              throw new PrismaGuardError(
+                `Decorator "${schemaStr}" not found in config. Check your prisma-guard.config.(js|mjs|json).`,
+              );
+            }
+            schemaStr = String(decorators[schemaStr]);
+          }
+          extraSchemas.push({ name: currentName, schema: schemaStr });
+          currentName = null;
+        } else {
+          currentContent += rest + "\n";
+        }
+      }
+    } else {
+      // We are in multi-line continuation mode.
+      let lineText = commentContent;
+      if (lineText.startsWith("@zod. ")) {
+        lineText = lineText.substring(6);
+      } else if (lineText.startsWith("@zod.")) {
+        lineText = lineText.substring(5);
+      } else if (lineText.startsWith("@zod ")) {
+        lineText = lineText.substring(5);
+      } else if (lineText.startsWith("@zod")) {
+        lineText = lineText.substring(4);
+      }
+
+      let foundEnd = false;
+      for (let i = 0; i < lineText.length; i++) {
+        const char = lineText[i];
+        if (char === "(") parenCount++;
+        else if (char === ")") parenCount--;
+
+        if (parenCount === 0) {
+          currentContent += lineText.substring(0, i);
+          foundEnd = true;
+          break;
+        }
+      }
+
+      if (foundEnd) {
+        let schemaStr = currentContent.trim();
+        if (/^\w+$/.test(schemaStr)) {
+          if (!decorators?.[schemaStr]) {
+            throw new PrismaGuardError(
+              `Decorator "${schemaStr}" not found in config. Check your prisma-guard.config.(js|mjs|json).`,
+            );
+          }
+          schemaStr = String(decorators[schemaStr]);
+        }
+        extraSchemas.push({ name: currentName, schema: schemaStr });
+        currentName = null;
+      } else {
+        currentContent += lineText + "\n";
+      }
+    }
+  }
+
+  return extraSchemas;
 }

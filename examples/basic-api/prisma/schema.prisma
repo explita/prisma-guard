@@ -1,0 +1,19 @@
+datasource db {
+  provider = "sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+/// @zod.pick(email, password).as(Login)
+model User {
+  id        Int      @id @default(autoincrement())
+  ///@zod.z.email("Invalid email")
+  email     String   @unique
+  ///@zod.min(6, "Password must be at least 6 characters long")
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

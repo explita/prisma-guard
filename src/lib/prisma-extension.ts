@@ -39,12 +39,14 @@ export function prismaGuard(options: PrismaGuardOptions = {}) {
   Object.assign(config, options);
 
   // 4. Resolve outputDir
-  const outputDir =
-    config.outputDir ||
-    path.join(process.cwd(), "node_modules", ".prisma-guard");
+  const guardDir = path.join(
+    process.cwd(),
+    "node_modules",
+    ".prisma-guard",
+    "guards",
+  );
 
   let modelFields: Record<string, ModelFields> = {};
-  const guardDir = path.join(outputDir, "guards");
 
   // Load and merge all guard files
   if (config.debug)

@@ -2,8 +2,8 @@
 import path from "path";
 import fs from "fs";
 import { execSync } from "child_process";
-import { generateFields } from "../core/field-generator.js";
-import { generateZod } from "../core/zod-generator.js";
+import { generateGuards } from "../core/guard-generator.js";
+import { generateZod } from "../core/zod/zod-generator.js";
 import { generateMetadata } from "../core/metadata-generator.js";
 import { loadConfigFile } from "../lib/load-config-file.js";
 import { printHelp } from "./lib/help-info.js";
@@ -51,10 +51,9 @@ async function main() {
     dryRun = args.includes("--dry-run");
     omitIds = args.includes("--omit-ids") || config.omitIds;
     omitDates = args.includes("--omit-dates") || config.omitDates;
-    generateZodFlag =
-      args.includes("--zod") ||
-      args.includes("--generate-zod") ||
-      config.generateZod;
+    generateZodFlag = args.includes("--no-zod")
+      ? false
+      : args.includes("--zod") || config.generateZod !== false;
 
     skipGitignore = args.includes("--skip-gitignore") || config.skipGitignore;
     prettierFlag = args.includes("--prettier")
@@ -120,15 +119,23 @@ async function main() {
   }
 
   async function runFieldGenerate() {
-    console.log(
-      `[prisma-guard] ${dryRun ? "[DRY-RUN] " : ""}Generating fields mapping...`,
+    const guardDir = path.join(
+      process.cwd(),
+      "node_modules",
+      ".prisma-guard",
+      "guards",
     );
-    console.log(`[prisma-guard] Schema directory: ${schemaDir}`);
-    console.log(`[prisma-guard] Output directory: ${outputDir}`);
+    console.log(
+      `[prisma-guard] ${dryRun ? "[DRY-RUN] " : ""}Generating internal guards...`,
+    );
+    if (config.debug) {
+      console.log(`[prisma-guard] Schema directory: ${schemaDir}`);
+      console.log(`[prisma-guard] Guard directory: ${guardDir}`);
+    }
 
-    await generateFields({ schemaDir, outputDir, dryRun });
+    await generateGuards({ schemaDir, outputDir, dryRun });
     if (!dryRun) {
-      console.log(`[prisma-guard] Successfully generated fields mapping.`);
+      console.log(`[prisma-guard] Successfully generated internal guards.`);
     }
   }
 
@@ -209,15 +216,26 @@ async function main() {
 }
 
 function runPrettier(outputDir: string) {
-  const dirs = ["guards", "zod"];
-  try {
-    const absoluteOutputDir = path.resolve(process.cwd(), outputDir);
-    const targetPaths = dirs
-      .map((d) => `"${path.join(absoluteOutputDir, d)}/**/*.{ts,json}"`)
-      .join(" ");
+  const absoluteOutputDir = path.resolve(process.cwd(), outputDir);
+  const bootstrapDir = path.join(
+    process.cwd(),
+    "node_modules",
+    ".prisma-guard",
+  );
 
-    console.log(`[prisma-guard] Running Prettier on ${dirs.join(", ")}...`);
-    execSync(`npx prettier --write ${targetPaths} --no-semi`, {
+  const targets = [];
+  if (fs.existsSync(path.join(absoluteOutputDir, "zod"))) {
+    targets.push(`"${path.join(absoluteOutputDir, "zod")}/**/*.ts"`);
+  }
+  if (fs.existsSync(path.join(bootstrapDir, "guards"))) {
+    targets.push(`"${path.join(bootstrapDir, "guards")}/**/*.json"`);
+  }
+
+  if (targets.length === 0) return;
+
+  try {
+    console.log(`[prisma-guard] Running Prettier on generated files...`);
+    execSync(`npx prettier --write ${targets.join(" ")} --no-semi`, {
       stdio: "inherit",
     });
     console.log(`[prisma-guard] Prettier completed.`);

@@ -1,0 +1,24 @@
+{
+  "name": "basic-api-example",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:setup": "prisma db push",
+    "generate": "prisma generate && npx prisma-guard",
+    "dev": "tsx watch src/server.ts"
+  },
+  "dependencies": {
+    "@explita/prisma-guard": "link:../..",
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "better-sqlite3": "^11.8.0",
+    "fastify": "^4.26.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "prisma": "^7.8.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  }
+}

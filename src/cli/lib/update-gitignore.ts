@@ -8,25 +8,25 @@ export function updateGitignore(outputDir: string) {
       const content = fs.readFileSync(gitignorePath, "utf-8");
       const relativeOutputDir = path.relative(process.cwd(), outputDir);
 
-      if (
-        relativeOutputDir &&
-        !relativeOutputDir.startsWith("node_modules")
-      ) {
-        const zodIgnore = path.join(relativeOutputDir, "zod").replace(/\\/g, "/");
-        const guardsIgnore = path
-          .join(relativeOutputDir, "guards")
+      if (relativeOutputDir && !relativeOutputDir.startsWith("node_modules")) {
+        const zodIgnore = path
+          .join(relativeOutputDir, "zod")
           .replace(/\\/g, "/");
 
-        let updated = false;
-        if (!content.includes(zodIgnore)) {
-          fs.appendFileSync(gitignorePath, `\n# Prisma Guard\n${zodIgnore}\n`);
-          console.log(`[prisma-guard] Added ${zodIgnore} to .gitignore`);
-          updated = true;
-        }
-        if (!content.includes(guardsIgnore)) {
-          if (!updated) fs.appendFileSync(gitignorePath, `\n# Prisma Guard\n`);
-          fs.appendFileSync(gitignorePath, `${guardsIgnore}\n`);
-          console.log(`[prisma-guard] Added ${guardsIgnore} to .gitignore`);
+        const linesToAdd: string[] = [];
+        if (!content.includes(zodIgnore)) linesToAdd.push(zodIgnore);
+
+        if (linesToAdd.length > 0) {
+          const prefix = content.includes("# Prisma Guard")
+            ? ""
+            : "\n# Prisma Guard\n";
+          fs.appendFileSync(
+            gitignorePath,
+            `${prefix}${linesToAdd.join("\n")}\n`,
+          );
+          linesToAdd.forEach((line) =>
+            console.log(`[prisma-guard] Added ${line} to .gitignore`),
+          );
         }
       }
     }

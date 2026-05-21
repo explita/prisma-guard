@@ -13,7 +13,8 @@ Options:
   --output-dir=DIR    Directory to save generated files (default: "./node_modules/.prisma-guard")
   --omit-ids          Omit @id fields from Zod schemas
   --omit-dates        Omit createdAt/updatedAt fields from Zod schemas
-  --zod, --generate-zod Generate Zod schemas along with field mapping
+  --zod               Generate Zod schemas along with field mapping (default)
+  --no-zod            Skip Zod schema generation
   --vscode            Install VS Code snippets and update .gitignore
   --no-prettier       Disable automatic Prettier formatting
   --prettier          Force Prettier formatting

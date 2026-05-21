@@ -25,15 +25,22 @@ function deepStringify(val: any): string {
   return `{ ${entries} }`;
 }
 
-export function createProxy(path: string = "", isRef = false) {
+export function createProxy(
+  path: string = "",
+  isRef = false,
+  importPath?: string,
+) {
   const getPath = () => {
-    if (isRef) return `__GUARD_REF__${path}`;
+    if (isRef) {
+      const base = `__GUARD_REF__${path}`;
+      return importPath ? `${base}__FROM__${importPath}` : base;
+    }
     return path;
   };
 
   const proxy = (...args: any[]) => {
     const stringifiedArgs = args.map(deepStringify).join(", ");
-    return createProxy(`${path}(${stringifiedArgs})`, isRef);
+    return createProxy(`${path}(${stringifiedArgs})`, isRef, importPath);
   };
 
   return new Proxy(proxy, {
@@ -46,7 +53,7 @@ export function createProxy(path: string = "", isRef = false) {
         return getPath;
       }
       const newPath = path ? `${path}.${String(prop)}` : `.${String(prop)}`;
-      return createProxy(newPath, isRef);
+      return createProxy(newPath, isRef, importPath);
     },
   });
 }

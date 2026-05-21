@@ -13,10 +13,10 @@ export function getEnumContent(enums: readonly any[], suffix = "Enum") {
   return content;
 }
 
-export function getIndexContent(generatedFiles: string[], hasEnums: boolean) {
-  const exports = generatedFiles.map((f) => `export * from "./${f}";`);
+export function getIndexContent(generatedFiles: string[], hasEnums: boolean, importSuffix = "") {
+  const exports = generatedFiles.map((f) => `export * from "./${f}${importSuffix}";`);
   if (hasEnums) {
-    exports.push(`export * from "./enums";`);
+    exports.push(`export * from "./enums${importSuffix}";`);
   }
   return exports.join("\n");
 }

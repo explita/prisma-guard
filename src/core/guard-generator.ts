@@ -4,14 +4,18 @@ import { GeneratorOptions, ModelFields } from "../types.js";
 import { generateDMMFData } from "../lib/generate-dmmf-data.js";
 import { toKebabCase } from "../lib/utils.js";
 
-export async function generateFields({
+export async function generateGuards({
   schemaDir,
-  outputDir,
   dryRun = false,
 }: GeneratorOptions) {
   const { dmmf, prismaFiles } = await generateDMMFData(schemaDir);
 
-  const guardOutputDir = path.join(outputDir, "guards");
+  const guardOutputDir = path.join(
+    process.cwd(),
+    "node_modules",
+    ".prisma-guard",
+    "guards",
+  );
   if (!dryRun) {
     if (fs.existsSync(guardOutputDir)) {
       fs.rmSync(guardOutputDir, { recursive: true, force: true });

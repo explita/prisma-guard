@@ -2,11 +2,6 @@ import { defaultTypeMap } from "./lib/constants.js";
 
 export interface PrismaGuardOptions {
   /**
-   * Output directory for the generated field mapping
-   * @default "./node_modules/.prisma-guard"
-   */
-  outputDir?: string;
-  /**
    * Whether to log stripped fields to the console
    * @default false
    */
@@ -39,6 +34,7 @@ export type ZodGeneratorOptions = {
   useJsDoc?: boolean;
   defaultsOnOverride?: boolean;
   fullScalar?: boolean;
+  importSuffix?: string;
 };
 
 /**
@@ -57,7 +53,9 @@ export type ZodGeneratorOptions = {
  * });
  * ```
  */
-export type PrismaGuardConfig = {
+export type PrismaGuardConfig<
+  TDecorators extends Record<string, unknown> = Record<string, unknown>,
+> = {
   /**
    * Path to the directory containing your Prisma schema files.
    *
@@ -68,10 +66,10 @@ export type PrismaGuardConfig = {
   schemaDir?: string;
 
   /**
-   * Output directory for generated files (Zod schemas, guards, and lib).
+   * Output directory for generated Zod schemas.
    *
-   * - If set to a committed directory (e.g., `./src/generated`), Zod schemas will be available in your code.
-   * - If not set, files are written to `node_modules/.prisma-guard` (suitable for runtime guard only).
+   * - If set (e.g., `./src/generated`), Zod schemas will be written there.
+   * - Internal guard files (JSON) are ALWAYS written to `node_modules/.prisma-guard` to keep your project clean.
    *
    * @default "node_modules/.prisma-guard"
    * @example "./src/generated"
@@ -222,9 +220,10 @@ export type PrismaGuardConfig = {
   };
 
   /**
-   * Named validation decorators for reuse across your Prisma schema.
+   * Named validation decorators for reuse across your Prisma schemas.
    *
-   * Define once in config, use everywhere with `/// @zod.use(name)`.
+   * Define once in config, use everywhere with
+   * `/// @zod.use(name)`.
    *
    * @example
    * ```typescript
@@ -237,11 +236,11 @@ export type PrismaGuardConfig = {
    * }
    * ```
    */
-  decorators?: Record<string, string>;
+  decorators?: TDecorators;
 
   /**
-   * Preserve Prisma's `@default()` value via `.default()` on Zod schemas even when
-   * an explicit override (`z.` or `override `) is used.
+   * Preserve Prisma's `@default()` value via `.default()` on Zod schemas
+   * even when an explicit override (`z.` or `override `) is used.
    *
    * @default false
    * @example true
@@ -257,4 +256,13 @@ export type PrismaGuardConfig = {
    * @example true
    */
   fullScalar?: boolean;
+
+  /**
+   * Suffix appended to generated relative imports.
+   * Useful for Node ESM (.js) or bundlers ("").
+   *
+   * @default ""
+   * @example ".js"
+   */
+  importSuffix?: string;
 };

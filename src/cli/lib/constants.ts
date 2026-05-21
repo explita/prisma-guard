@@ -7,7 +7,7 @@ export const allowedArgs = [
   "--omit-dates",
   "--dry-run",
   "--zod",
-  "--generate-zod",
+  "--no-zod",
   "--help",
   "-h",
   "metadata",
@@ -26,7 +26,6 @@ export const shortFlags = {
   "--omit-dates": "-d",
   "--dry-run": "-r",
   "--zod": "-z",
-  "--generate-zod": "-g",
   "--help": "-h",
   "--vscode": "-v",
   "--skip-gitignore": "-s",
@@ -39,7 +38,7 @@ export const defaultConfig = () => {
   const version = getCurrentPackageVersion();
   const versionComment = `// Version: ${version}`;
   return `${versionComment}
-import { defineConfig } from "@explita/prisma-guard";
+import { defineConfig, v } from "@explita/prisma-guard";
 
 export default defineConfig({
   debug: false,
@@ -51,13 +50,17 @@ export default defineConfig({
   zodOmit: [],
   prettier: true,
   skipGitignore: false,
-  decorators: {},
-  typeMap: {},
+  decorators: {
+    // Example: email: v.chain.email().trim().toLowerCase(),
+  },
+  typeMap: {
+    // Example: "User.email": v.override.string().email(),
+  },
   autoTrim: true,
   enumSuffix: "Enum",
   schemaSuffix: "Schema",
   defaultsOnOverride: false,
-  fullScalar: false, //true by default.
+  fullScalar: true,
 });
 `;
 };

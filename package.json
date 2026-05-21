@@ -1,6 +1,6 @@
 {
   "name": "@explita/prisma-guard",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "The ultimate Prisma companion for input sanitization and Zod schema generation. Protect your database from unknown fields and validate your data with ease.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -23,6 +23,7 @@
   "scripts": {
     "clean": "rimraf dist",
     "build": "npm run clean && tsc",
+    "benchmark": "node benchmarks/strip-fields.bench.js",
     "prepublishOnly": "npm run build"
   },
   "repository": {
@@ -42,8 +43,8 @@
   "devDependencies": {
     "@types/node": "^24",
     "rimraf": "^6.0.1",
-    "zod": "^4.4.3",
-    "typescript": "^5"
+    "typescript": "^5",
+    "zod": "^4.4.3"
   },
   "files": [
     "dist",
